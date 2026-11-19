@@ -1,9 +1,9 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import Image, { StaticImageData } from 'next/image';
 import Link from 'next/link';
-import { motion } from 'framer-motion';
+import { motion, PanInfo } from 'framer-motion';
 import {
     ChevronRight,
     ChevronLeft,
@@ -27,7 +27,7 @@ interface ShowcaseItem {
     category: 'Suits' | 'Thaan' | 'All Over' | 'Collection';
     glowColor: string;
     accentColor: string;
-    image: StaticImageData;
+    image: StaticImageData | string;
     specs: {
         gsm: string;
         feel: string;
@@ -91,6 +91,23 @@ const items: ShowcaseItem[] = [
     },
     {
         id: 3,
+        title: 'Embroidered Bridal Heritage',
+        subtitle: 'Suits, Thaan & Zardozi Dupatta',
+        badge: 'Bridal Masterpiece',
+        category: 'Suits',
+        glowColor: 'rgba(59, 130, 246, 0.45)', // sapphire blue
+        accentColor: '#60A5FA',
+        image: '/images/about-hero.jpg',
+        specs: {
+            gsm: '200–280 GSM',
+            feel: 'Rich Royal Drape',
+            purity: 'Hand-Embroidered Zari',
+        },
+        description: 'Pastel cream, royal navy, mauve, and sage silk layers with ornate floral cutwork zardozi dupatta.',
+        tagline: 'Exclusive Srinagar Weave',
+    },
+    {
+        id: 4,
         title: 'Forest Emerald Velvet',
         subtitle: 'Royal Makhmal Suit',
         badge: 'Winter Regal',
@@ -107,7 +124,7 @@ const items: ShowcaseItem[] = [
         tagline: 'Heavy Bridal Needlework',
     },
     {
-        id: 4,
+        id: 5,
         title: 'Ruby Damask Brocade',
         subtitle: 'Heritage Silk Thaan Cut',
         badge: 'Signature Handloom',
@@ -130,8 +147,12 @@ export default function Hero() {
     const [isPaused, setIsPaused] = useState(false);
     const [progress, setProgress] = useState(0);
     const [isMobile, setIsMobile] = useState(false);
-    const [touchStartX, setTouchStartX] = useState<number | null>(null);
-    const [touchEndX, setTouchEndX] = useState<number | null>(null);
+
+    // Reliable touch position references
+    const touchStartX = useRef<number | null>(null);
+    const touchStartY = useRef<number | null>(null);
+    const touchMoved = useRef(false);
+    const pauseTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
     useEffect(() => {
         const checkMobile = () => setIsMobile(window.innerWidth < 768);
@@ -152,32 +173,71 @@ export default function Hero() {
         setProgress(0);
     }, []);
 
-    // Touch swipe handlers for fluid mobile gestures
+    // Temporarily pause auto-slide on touch / click and auto-resume after 4 seconds
+    const handleUserInteraction = useCallback(() => {
+        setIsPaused(true);
+        if (pauseTimeoutRef.current) clearTimeout(pauseTimeoutRef.current);
+        pauseTimeoutRef.current = setTimeout(() => {
+            setIsPaused(false);
+        }, 4000);
+    }, []);
+
+    // Touch swipe handlers with changedTouches support for mobile
     const handleTouchStart = (e: React.TouchEvent) => {
-        setTouchEndX(null);
-        setTouchStartX(e.targetTouches[0].clientX);
-    };
-
-    const handleTouchMove = (e: React.TouchEvent) => {
-        setTouchEndX(e.targetTouches[0].clientX);
-    };
-
-    const handleTouchEnd = () => {
-        if (touchStartX === null || touchEndX === null) return;
-        const diff = touchStartX - touchEndX;
-        if (diff > 45) {
-            handleNext();
-        } else if (diff < -45) {
-            handlePrev();
+        if (e.touches.length > 0) {
+            touchStartX.current = e.touches[0].clientX;
+            touchStartY.current = e.touches[0].clientY;
+            touchMoved.current = false;
         }
     };
 
-    // 3-second auto-slide timer with smooth progress bar
+    const handleTouchMove = (e: React.TouchEvent) => {
+        if (touchStartX.current === null || touchStartY.current === null || e.touches.length === 0) return;
+        const diffX = touchStartX.current - e.touches[0].clientX;
+        const diffY = touchStartY.current - e.touches[0].clientY;
+        // Check if movement is horizontal
+        if (Math.abs(diffX) > Math.abs(diffY) && Math.abs(diffX) > 8) {
+            touchMoved.current = true;
+        }
+    };
+
+    const handleTouchEnd = (e: React.TouchEvent) => {
+        if (touchStartX.current === null || !touchMoved.current || e.changedTouches.length === 0) {
+            touchStartX.current = null;
+            touchStartY.current = null;
+            touchMoved.current = false;
+            return;
+        }
+        const endX = e.changedTouches[0].clientX;
+        const diffX = touchStartX.current - endX;
+
+        // Low 30px threshold for easy, responsive flick on mobile
+        if (diffX > 30) {
+            handleNext();
+            handleUserInteraction();
+        } else if (diffX < -30) {
+            handlePrev();
+            handleUserInteraction();
+        }
+
+        touchStartX.current = null;
+        touchStartY.current = null;
+        touchMoved.current = false;
+    };
+
+    const handleTouchCancel = () => {
+        touchStartX.current = null;
+        touchStartY.current = null;
+        touchMoved.current = false;
+    };
+
+    // Auto-slide timer with smooth progress bar
     useEffect(() => {
         if (isPaused) return;
 
-        const intervalMs = 50; // update progress every 50ms
-        const step = 100 / (3000 / intervalMs);
+        const intervalMs = 50;
+        const durationMs = 3500; // 3.5s per slide
+        const step = 100 / (durationMs / intervalMs);
 
         const timer = setInterval(() => {
             setProgress((prev) => {
@@ -195,14 +255,15 @@ export default function Hero() {
     return (
         <section
             aria-label="Magray Textiles Hero Showcase"
-            onMouseEnter={() => setIsPaused(true)}
-            onMouseLeave={() => setIsPaused(false)}
-            onTouchStart={handleTouchStart}
-            onTouchMove={handleTouchMove}
-            onTouchEnd={handleTouchEnd}
-            className="relative w-full min-h-[680px] sm:min-h-[720px] lg:min-h-[820px] bg-[#07060D] text-white overflow-hidden select-none flex flex-col justify-between mt-0"
+            onMouseEnter={() => {
+                if (!isMobile) setIsPaused(true);
+            }}
+            onMouseLeave={() => {
+                if (!isMobile) setIsPaused(false);
+            }}
+            className="relative w-full min-h-[690px] sm:min-h-[740px] lg:min-h-[840px] bg-[#07060D] text-white overflow-hidden select-none flex flex-col justify-between mt-0"
         >
-            {/* AMBIENT RADIAL LIGHTING & GLOW (INSPIRED BY REFERENCE PIN) */}
+            {/* AMBIENT RADIAL LIGHTING & GLOW */}
             <div
                 className="absolute inset-0 pointer-events-none transition-all duration-700 ease-out"
                 style={{
@@ -215,7 +276,7 @@ export default function Hero() {
                 }}
             />
 
-            {/* DOT GRID MATRIX PATTERN (EXACT STYLE FROM REFERENCE) */}
+            {/* DOT GRID MATRIX PATTERN */}
             <div
                 className="absolute inset-0 pointer-events-none opacity-25"
                 style={{
@@ -228,7 +289,7 @@ export default function Hero() {
             />
 
             {/* TOP HEADER BAR */}
-            <div className="relative z-20 max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-10 pt-24 sm:pt-30 lg:pt-36 flex flex-col items-center text-center">
+            <div className="relative z-20 max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-10 pt-24 sm:pt-28 lg:pt-36 flex flex-col items-center text-center">
                 <div className="inline-flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-1 sm:py-1.5 rounded-full bg-white/5 border border-white/10 backdrop-blur-md shadow-inner mb-3 sm:mb-4">
                     <Sparkles size={12} className="text-amber-400 animate-pulse shrink-0" />
                     <span className="text-[10px] sm:text-xs font-semibold uppercase tracking-[0.2em] sm:tracking-[0.25em] text-amber-200">
@@ -249,7 +310,7 @@ export default function Hero() {
                 </p>
             </div>
 
-            {/* MASSIVE GLOWING BACKDROP WATERMARK (LIKE "Funnels" IN REFERENCE PIN) */}
+            {/* MASSIVE GLOWING BACKDROP WATERMARK */}
             <div className="absolute top-[38%] left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none z-0 select-none">
                 <span
                     className="text-7xl sm:text-9xl lg:text-[14rem] font-black uppercase tracking-[0.08em] opacity-15"
@@ -264,33 +325,45 @@ export default function Hero() {
             </div>
 
             {/* 3D CYLINDRICAL CURVED CAROUSEL DECK (CENTER STAGE) */}
-            <div className="relative z-10 w-full flex-1 flex items-center justify-center my-4 sm:my-8 px-2 sm:px-6">
+            <div
+                className="relative z-10 w-full flex-1 flex items-center justify-center my-3 sm:my-8 px-2 sm:px-6 touch-pan-y"
+                onTouchStart={handleTouchStart}
+                onTouchMove={handleTouchMove}
+                onTouchEnd={handleTouchEnd}
+                onTouchCancel={handleTouchCancel}
+            >
                 {/* LEFT SIDE ARROW */}
                 <button
-                    onClick={handlePrev}
+                    onClick={() => {
+                        handlePrev();
+                        handleUserInteraction();
+                    }}
                     aria-label="Previous slide"
-                    className="absolute left-1 sm:left-4 lg:left-8 top-1/2 -translate-y-1/2 z-40 w-9 h-9 sm:w-12 sm:h-12 lg:w-14 lg:h-14 rounded-full bg-white/15 hover:bg-amber-500 border border-white/20 hover:border-amber-400 text-white hover:text-slate-950 backdrop-blur-xl flex items-center justify-center transition-all duration-300 shadow-[0_10px_30px_rgba(0,0,0,0.6)] hover:scale-110 active:scale-95 group cursor-pointer"
+                    className="absolute left-1 sm:left-4 lg:left-8 top-1/2 -translate-y-1/2 z-50 w-10 h-10 sm:w-12 sm:h-12 lg:w-14 lg:h-14 rounded-full bg-black/70 sm:bg-white/15 hover:bg-amber-500 border border-white/25 hover:border-amber-400 text-white hover:text-slate-950 backdrop-blur-xl flex items-center justify-center transition-all duration-300 shadow-[0_10px_30px_rgba(0,0,0,0.8)] active:scale-90 group cursor-pointer pointer-events-auto touch-manipulation"
                 >
-                    <ChevronLeft size={18} className="sm:hidden transition-transform group-hover:-translate-x-0.5" />
+                    <ChevronLeft size={20} className="sm:hidden" />
                     <ChevronLeft size={24} className="hidden sm:inline transition-transform group-hover:-translate-x-0.5" />
                 </button>
 
                 {/* RIGHT SIDE ARROW */}
                 <button
-                    onClick={handleNext}
+                    onClick={() => {
+                        handleNext();
+                        handleUserInteraction();
+                    }}
                     aria-label="Next slide"
-                    className="absolute right-1 sm:right-4 lg:right-8 top-1/2 -translate-y-1/2 z-40 w-9 h-9 sm:w-12 sm:h-12 lg:w-14 lg:h-14 rounded-full bg-white/15 hover:bg-amber-500 border border-white/20 hover:border-amber-400 text-white hover:text-slate-950 backdrop-blur-xl flex items-center justify-center transition-all duration-300 shadow-[0_10px_30px_rgba(0,0,0,0.6)] hover:scale-110 active:scale-95 group cursor-pointer"
+                    className="absolute right-1 sm:right-4 lg:right-8 top-1/2 -translate-y-1/2 z-50 w-10 h-10 sm:w-12 sm:h-12 lg:w-14 lg:h-14 rounded-full bg-black/70 sm:bg-white/15 hover:bg-amber-500 border border-white/25 hover:border-amber-400 text-white hover:text-slate-950 backdrop-blur-xl flex items-center justify-center transition-all duration-300 shadow-[0_10px_30px_rgba(0,0,0,0.8)] active:scale-90 group cursor-pointer pointer-events-auto touch-manipulation"
                 >
-                    <ChevronRight size={18} className="sm:hidden transition-transform group-hover:translate-x-0.5" />
+                    <ChevronRight size={20} className="sm:hidden" />
                     <ChevronRight size={24} className="hidden sm:inline transition-transform group-hover:translate-x-0.5" />
                 </button>
 
+                {/* 3D PERSPECTIVE STAGE */}
                 <div
                     className="relative w-full max-w-6xl h-[380px] sm:h-[460px] lg:h-[500px] flex items-center justify-center"
-                    style={{ perspective: '1400px', transformStyle: 'preserve-3d' }}
+                    style={{ perspective: isMobile ? '900px' : '1400px', transformStyle: 'preserve-3d' }}
                 >
                     {items.map((item, idx) => {
-                        // Calculate offset relative to currentIndex (-2, -1, 0, 1, 2)
                         const n = items.length;
                         let offset = (idx - currentIndex + n) % n;
                         if (offset > n / 2) offset -= n;
@@ -301,13 +374,13 @@ export default function Hero() {
 
                         const isCenter = offset === 0;
 
-                        // Cylindrical 3D math matching the reference design:
-                        const spacing = isMobile ? 155 : 290;
+                        // Cylindrical 3D math: tighter spacing on mobile so cards don't overlap arrows
+                        const spacing = isMobile ? 120 : 280;
                         const xOffset = offset * spacing;
-                        const zOffset = -Math.abs(offset) * (isMobile ? 60 : 110) + (isCenter ? 30 : 0);
-                        const rotateY = -offset * (isMobile ? 20 : 26); // curve toward center
-                        const scale = isCenter ? 1 : (isMobile ? 0.74 : 0.84) - Math.abs(offset) * 0.05;
-                        const opacity = isCenter ? 1 : Math.max(0.3, 0.85 - Math.abs(offset) * 0.35);
+                        const zOffset = -Math.abs(offset) * (isMobile ? 50 : 110) + (isCenter ? 30 : 0);
+                        const rotateY = -offset * (isMobile ? 18 : 26);
+                        const scale = isCenter ? 1 : (isMobile ? 0.76 : 0.84) - Math.abs(offset) * 0.05;
+                        const opacity = isCenter ? 1 : Math.max(0.25, 0.85 - Math.abs(offset) * 0.35);
 
                         return (
                             <motion.div
@@ -316,10 +389,26 @@ export default function Hero() {
                                     if (!isCenter) {
                                         setCurrentIndex(idx);
                                         setProgress(0);
+                                        handleUserInteraction();
                                     }
                                 }}
+                                onPanEnd={
+                                    isCenter
+                                        ? (_event: MouseEvent | TouchEvent | PointerEvent, info: PanInfo) => {
+                                              if (info.offset.x < -30 || info.velocity.x < -200) {
+                                                  handleNext();
+                                                  handleUserInteraction();
+                                              } else if (info.offset.x > 30 || info.velocity.x > 200) {
+                                                  handlePrev();
+                                                  handleUserInteraction();
+                                              }
+                                          }
+                                        : undefined
+                                }
                                 className={`absolute transition-all duration-700 ease-out ${
-                                    isCenter ? 'cursor-default z-30' : 'cursor-pointer hover:opacity-100 z-10'
+                                    isCenter
+                                        ? 'cursor-grab active:cursor-grabbing z-30 pointer-events-auto'
+                                        : 'cursor-pointer hover:opacity-100 z-10 sm:pointer-events-auto pointer-events-none'
                                 }`}
                                 animate={{
                                     x: xOffset,
@@ -336,11 +425,11 @@ export default function Hero() {
                                 }}
                                 style={{
                                     transformStyle: 'preserve-3d',
-                                    width: 'min(330px, 78vw)',
-                                    height: 'min(430px, 86vw)',
+                                    width: isMobile ? 'min(300px, 78vw)' : 'min(330px, 78vw)',
+                                    height: isMobile ? 'min(410px, 84vw)' : 'min(430px, 86vw)',
                                 }}
                             >
-                                {/* THE CURVED GLASS CARD (INSPIRED BY DASHBOARD PANELS IN REFERENCE) */}
+                                {/* THE CURVED GLASS CARD */}
                                 <div
                                     className={`relative w-full h-full rounded-2xl sm:rounded-3xl overflow-hidden backdrop-blur-2xl transition-all duration-500 flex flex-col justify-between p-3.5 sm:p-5 ${
                                         isCenter
@@ -349,7 +438,7 @@ export default function Hero() {
                                     }`}
                                 >
                                     {/* TOP CARD BAR */}
-                                    <div className="flex items-center justify-between z-10 mb-3">
+                                    <div className="flex items-center justify-between z-10 mb-2 sm:mb-3">
                                         <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-black/40 border border-white/10 backdrop-blur-md">
                                             <span
                                                 className="w-2 h-2 rounded-full animate-ping"
@@ -365,46 +454,47 @@ export default function Hero() {
                                         </span>
                                     </div>
 
-                                    {/* PRODUCT IMAGE SHOWCASE WITH AMBIENT GLOW */}
-                                    <div className="relative flex-1 w-full my-2 rounded-2xl overflow-hidden bg-gradient-to-b from-white/5 to-black/40 border border-white/10 group">
+                                    {/* PRODUCT IMAGE SHOWCASE */}
+                                    <div className="relative flex-1 w-full my-1.5 sm:my-2 rounded-2xl overflow-hidden bg-gradient-to-b from-white/5 to-black/40 border border-white/10 group">
                                         <Image
                                             src={item.image}
                                             alt={item.title}
                                             fill
                                             priority={isCenter}
                                             sizes="(max-width: 768px) 300px, 400px"
-                                            className={`object-cover object-center transition-transform duration-700 ${isCenter ? 'group-hover:scale-105' : 'filter brightness-90'
-                                                }`}
+                                            className={`object-cover object-center transition-transform duration-700 ${
+                                                isCenter ? 'group-hover:scale-105' : 'filter brightness-90'
+                                            }`}
                                         />
 
                                         {/* Bottom subtle gradient on image */}
-                                        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent" />
+                                        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent pointer-events-none" />
 
                                         {/* Overlay quick title on image */}
-                                        <div className="absolute bottom-3 left-3 right-3 text-left">
-                                            <p className="text-[11px] font-semibold uppercase tracking-wider text-amber-300">
+                                        <div className="absolute bottom-2.5 sm:bottom-3 left-2.5 sm:left-3 right-2.5 sm:right-3 text-left pointer-events-none">
+                                            <p className="text-[10px] sm:text-[11px] font-semibold uppercase tracking-wider text-amber-300">
                                                 {item.category}
                                             </p>
-                                            <h3 className="text-base sm:text-lg font-black text-white leading-tight">
+                                            <h3 className="text-sm sm:text-lg font-black text-white leading-tight">
                                                 {item.title}
                                             </h3>
                                         </div>
                                     </div>
 
-                                    {/* BOTTOM SPEC BAR (INSPIRED BY THE DASHBOARD PILLS IN THE REFERENCE) */}
-                                    <div className="z-10 pt-2 flex flex-col gap-2.5">
+                                    {/* BOTTOM SPEC BAR */}
+                                    <div className="z-10 pt-1.5 sm:pt-2 flex flex-col gap-2">
                                         <div className="grid grid-cols-3 gap-1.5 text-center">
-                                            <div className="px-2 py-1.5 rounded-xl bg-white/5 border border-white/5 backdrop-blur-sm">
-                                                <span className="block text-[9px] uppercase tracking-wider text-slate-400">GSM</span>
-                                                <span className="block text-[10px] font-bold text-white truncate">{item.specs.gsm}</span>
+                                            <div className="px-1.5 sm:px-2 py-1 sm:py-1.5 rounded-xl bg-white/5 border border-white/5 backdrop-blur-sm">
+                                                <span className="block text-[8px] sm:text-[9px] uppercase tracking-wider text-slate-400">GSM</span>
+                                                <span className="block text-[9px] sm:text-[10px] font-bold text-white truncate">{item.specs.gsm}</span>
                                             </div>
-                                            <div className="px-2 py-1.5 rounded-xl bg-white/5 border border-white/5 backdrop-blur-sm">
-                                                <span className="block text-[9px] uppercase tracking-wider text-slate-400">Feel</span>
-                                                <span className="block text-[10px] font-bold text-white truncate">{item.specs.feel}</span>
+                                            <div className="px-1.5 sm:px-2 py-1 sm:py-1.5 rounded-xl bg-white/5 border border-white/5 backdrop-blur-sm">
+                                                <span className="block text-[8px] sm:text-[9px] uppercase tracking-wider text-slate-400">Feel</span>
+                                                <span className="block text-[9px] sm:text-[10px] font-bold text-white truncate">{item.specs.feel}</span>
                                             </div>
-                                            <div className="px-2 py-1.5 rounded-xl bg-white/5 border border-white/5 backdrop-blur-sm">
-                                                <span className="block text-[9px] uppercase tracking-wider text-slate-400">Origin</span>
-                                                <span className="block text-[10px] font-bold text-amber-300 truncate">Srinagar</span>
+                                            <div className="px-1.5 sm:px-2 py-1 sm:py-1.5 rounded-xl bg-white/5 border border-white/5 backdrop-blur-sm">
+                                                <span className="block text-[8px] sm:text-[9px] uppercase tracking-wider text-slate-400">Origin</span>
+                                                <span className="block text-[9px] sm:text-[10px] font-bold text-amber-300 truncate">Srinagar</span>
                                             </div>
                                         </div>
 
@@ -417,7 +507,7 @@ export default function Hero() {
                                                     )}.%20Please%20share%20meterage,%20rate,%20and%20color%20options.`}
                                                     target="_blank"
                                                     rel="noopener noreferrer"
-                                                    className="flex-1 inline-flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-black text-xs uppercase tracking-wider shadow-lg transition-transform hover:scale-[1.02] active:scale-[0.98]"
+                                                    className="flex-1 inline-flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-black text-xs uppercase tracking-wider shadow-lg transition-transform hover:scale-[1.02] active:scale-[0.98] touch-manipulation"
                                                 >
                                                     <MessageCircle size={14} className="fill-slate-950" />
                                                     <span>WhatsApp Order</span>
@@ -425,7 +515,7 @@ export default function Hero() {
 
                                                 <Link
                                                     href="/products"
-                                                    className="inline-flex items-center justify-center p-2.5 rounded-xl bg-white/10 hover:bg-white/20 border border-white/20 text-white transition-colors"
+                                                    className="inline-flex items-center justify-center p-2.5 rounded-xl bg-white/10 hover:bg-white/20 border border-white/20 text-white transition-colors touch-manipulation"
                                                     title="View all 13 fabrics in collection"
                                                 >
                                                     <ArrowUpRight size={16} />
@@ -459,26 +549,31 @@ export default function Hero() {
                             0{items.length}
                         </span>
                         <span className="text-[11px] text-slate-500 uppercase tracking-wider ml-1 hidden md:inline">
-                            • Auto-sliding every 3s
+                            • Auto-sliding
                         </span>
                     </div>
 
-                    {/* DOT PAGINATION */}
-                    <div className="flex items-center gap-1.5 sm:gap-2">
+                    {/* DOT PAGINATION WITH GENEROUS TOUCH TARGETS */}
+                    <div className="flex items-center gap-1 sm:gap-1.5">
                         {items.map((it, idx) => (
                             <button
                                 key={it.id}
                                 onClick={() => {
                                     setCurrentIndex(idx);
                                     setProgress(0);
+                                    handleUserInteraction();
                                 }}
                                 aria-label={`Jump to ${it.title}`}
-                                className={`h-2 rounded-full transition-all duration-300 ${
-                                    currentIndex === idx
-                                        ? 'w-6 sm:w-8 bg-amber-400'
-                                        : 'w-2 bg-white/25 hover:bg-white/50'
-                                }`}
-                            />
+                                className="p-1 sm:p-1.5 touch-manipulation cursor-pointer"
+                            >
+                                <span
+                                    className={`block h-2 rounded-full transition-all duration-300 ${
+                                        currentIndex === idx
+                                            ? 'w-6 sm:w-8 bg-amber-400'
+                                            : 'w-2 bg-white/25 hover:bg-white/50'
+                                    }`}
+                                />
+                            </button>
                         ))}
                     </div>
                 </div>
@@ -487,7 +582,7 @@ export default function Hero() {
                 <div className="w-full sm:w-auto text-center sm:text-right">
                     <Link
                         href="/products"
-                        className="inline-flex items-center justify-center gap-1.5 w-full sm:w-auto px-4 py-2 sm:py-2.5 rounded-full bg-white/5 hover:bg-white/10 border border-white/10 text-[11px] sm:text-xs font-bold uppercase tracking-wider text-slate-200 hover:text-amber-400 transition-colors"
+                        className="inline-flex items-center justify-center gap-1.5 w-full sm:w-auto px-4 py-2 sm:py-2.5 rounded-full bg-white/5 hover:bg-white/10 border border-white/10 text-[11px] sm:text-xs font-bold uppercase tracking-wider text-slate-200 hover:text-amber-400 transition-colors touch-manipulation"
                     >
                         <span>View 13 Fabrics Collection</span>
                         <ArrowUpRight size={14} className="text-amber-400" />
