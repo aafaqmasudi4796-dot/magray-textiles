@@ -168,7 +168,7 @@ export default function Footer() {
             {/* BOTTOM BAR */}
             <div className="border-t border-white/10 bg-[#051329]">
                 <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-10 py-5 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-slate-400">
-                    <p>© {new Date().getFullYear()} Magray Textiles. All rights reserved.</p>
+                    <p>© 2026 Magray Textiles. All rights reserved.</p>
                     <div className="flex items-center gap-6">
                         <Link href="/about" className="hover:text-white transition-colors">
                             Privacy Policy
